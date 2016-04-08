@@ -7,6 +7,7 @@ var argv = require('optimist')
 .describe('repo', 'git url to repository with node_modules content')
 .describe('cross-platform', 'do not archive platform-specific files in node_modules')
 .describe('incremental-install', 'start npm install with last node_modules instead of clearing them')
+.describe('force', 'Override any modules that exist for this package version.')
 .alias('v', 'verbose')
 .demand(['repo']).argv;
 
@@ -16,7 +17,8 @@ checkoutNodeModules(process.cwd(), {
     verbose: argv.verbose,
     repo: argv.repo,
     crossPlatform: argv['cross-platform'],
-    incrementalInstall: argv['incremental-install']
+    incrementalInstall: argv['incremental-install'],
+    force: argv['force']
 })
 .then(function () {
     process.exit(0);

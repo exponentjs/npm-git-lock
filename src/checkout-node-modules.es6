@@ -36,12 +36,13 @@ const PLATFORM_SPECIFIC_MODULES = {
  */
 const MAX_SHELL_LENGTH = 2000;
 
-module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
+module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall, force}) => {
 
     let packageJsonSha1;
     let packageJsonVersion;
     let packageJsonPackageName;
     let leaveAsIs = false;
+    let isForced = force;
     log.setLevel(verbose ? `debug`: `info`);
     log.debug(`Updating ${cwd}/node_modules using repo ${repo}`);
     return readFilePromise(`${cwd}/package.json`, `utf-8`)
@@ -68,7 +69,7 @@ module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
                     // repo is in remotes
                     return git(`tag -l --points-at HEAD`)
                     .then((tags) => {
-                        if (tags.split('\n').indexOf(packageJsonSha1) >= 0) {
+                        if (tags.split('\n').indexOf(packageJsonSha1) >= 0 && !isForced) {
                             // if the current HEAD is at the right commit, don't change anything
                             log.debug(`${repo} is already at tag ${packageJsonSha1}, leaving as is`);
                             leaveAsIs = true;
@@ -87,6 +88,14 @@ module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
         if (leaveAsIs) {
             return;
         }
+
+        if (isForced) {
+            log.debug(`Forcing -- Deleting ${packageJsonSha1} tag locally and from remote.`);
+            return git(`tag -d ${packageJsonSha1}`)
+                .then(() => git(`push origin :refs/tags/${packageJsonSha1}`))
+                .then(installPackagesTagAndPushToRemote);
+        }
+
         log.debug(`Remote ${repo} is in node_modules, checking out ${packageJsonSha1} tag`);
         process.chdir(`${cwd}/node_modules`);
         return git(`rev-list ${packageJsonSha1}`, { silent: true })
