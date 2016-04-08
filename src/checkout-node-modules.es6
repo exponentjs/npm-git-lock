@@ -40,6 +40,7 @@ module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
 
     let packageJsonSha1;
     let packageJsonVersion;
+    let packageJsonPackageName;
     let leaveAsIs = false;
     log.setLevel(verbose ? `debug`: `info`);
     log.debug(`Updating ${cwd}/node_modules using repo ${repo}`);
@@ -52,6 +53,7 @@ module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
         // replace / in hash with _ because git does not allow leading / in tags
         packageJsonSha1 = crypto.createHash(`sha1`).update(stableContent).digest(`base64`).replace(/\//g, "_");
         packageJsonVersion = packageJson.version;
+        packageJsonPackageName = packageJson.name;
         log.debug(`SHA-1 of package.json (version ${packageJsonVersion}) is ${packageJsonSha1}`);
         return packageJsonSha1;
     })
@@ -260,12 +262,19 @@ module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
         // We should also think about what happens if origin/master diverges between here and the actual push.
         return git(`stash save --include-untracked`)
         .then(() => {
-            return git(`checkout master`);
-        })
-        .then(() => {
-            // Pull first so that the push later does not (or at least is much less likely to)
-            // fail due to diverged branches.
-            return git(`pull`);
+            return git(`checkout ${packageJsonPackageName}`, {silent: true})
+                .then(() => {
+                    // Pull first so that the push later does not (or at least is much less likely to)
+                    // fail due to diverged branches.
+                    git(`pull origin ${packageJsonPackageName}`)
+                })
+                .catch(() => {
+                    log.debug(`Removing everything from node_modules.`);
+                    return git(`checkout --orphan ${packageJsonPackageName}`)
+                        .then(()=> git(`rm -rf .`))
+                        .then(()=> git(`clean -fd`))
+                        .then(()=> git(`commit --allow-empty -m 'Initial commit.'`));
+                });
         })
         .then(() => {
             if (!incrementalInstall) {
@@ -318,7 +327,8 @@ module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
                     // Changes in the project's package.json might not lead to changes in installed dependencies
                     // (e.g. because only other metadata was changed).
                     // Then running npm-git-lock will not install new dependencies, if --incremental-install is set.
-                    return git(`commit -a -m "sealing package.json dependencies of version ${packageJsonVersion}, using npm ${npmVersion}"`)
+                    log.debug(`Committing`);
+                    return git(`commit -a -m "sealing package.json dependencies of package ${packageJsonPackageName} @ version ${packageJsonVersion}, using npm ${npmVersion}"`)
                     .then(() => {
                         log.debug(`Committed`);
                     });
@@ -333,7 +343,7 @@ module.exports = (cwd, {repo, verbose, crossPlatform, incrementalInstall}) => {
             })
             .then(() => {
                 log.debug(`Pushing tag ${packageJsonSha1} to ${repo}`);
-                return git(`push ${repo} master --tags`);
+                return git(`push ${repo} ${packageJsonPackageName} --tags`);
             });
         });
     }
